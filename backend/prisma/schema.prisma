@@ -1,0 +1,423 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  active
+  inactive
+  blocked
+}
+
+enum ConsumerStatus {
+  active
+  suspended
+  disconnected
+}
+
+enum EmployeeStatus {
+  active
+  inactive
+  suspended
+}
+
+enum BillStatus {
+  unpaid
+  partially_paid
+  paid
+  overdue
+  cancelled
+}
+
+enum BillingBatchStatus {
+  processing
+  completed
+  partial
+  failed
+}
+
+enum ComplaintStatus {
+  pending
+  assigned
+  in_progress
+  resolved
+  closed
+  rejected
+}
+
+enum ComplaintPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  cheque
+  online
+}
+
+// ─── Auth & Access Control ────────────────────────────────────────────────────
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  fullName     String     @map("full_name")
+  email        String     @unique
+  username     String?    @unique
+  phone        String?
+  passwordHash String     @map("password_hash")
+  roleId       String     @map("role_id")
+  employeeId   String?    @unique @map("employee_id")
+  status       UserStatus @default(active)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  role              Role               @relation(fields: [roleId], references: [id])
+  employee          Employee?          @relation(fields: [employeeId], references: [id])
+  billingBatches    BillingBatch[]
+  auditLogs         AuditLog[]
+  complaintStatuses ComplaintStatusHistory[]
+  refreshTokens     RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ─── Consumers ────────────────────────────────────────────────────────────────
+
+model Zone {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String?  @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  consumers Consumer[]
+  employees Employee[]
+
+  @@map("zones")
+}
+
+model Consumer {
+  id                   String         @id @default(uuid())
+  consumerNumber       String         @unique @map("consumer_number")
+  fullName             String         @map("full_name")
+  fatherOrCompanyName  String?        @map("father_or_company_name")
+  cnicOrRegistrationNo String?        @map("cnic_or_registration_no")
+  phone                String?
+  email                String?
+  addressLine          String?        @map("address_line")
+  city                 String?
+  area                 String?
+  zoneId               String?        @map("zone_id")
+  connectionType       String?        @map("connection_type")
+  meterNumber          String?        @map("meter_number")
+  status               ConsumerStatus @default(active)
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  zone        Zone?                @relation(fields: [zoneId], references: [id])
+  connections ConsumerConnection[]
+  bills       Bill[]
+  complaints  Complaint[]
+
+  @@map("consumers")
+}
+
+model ConsumerConnection {
+  id             String   @id @default(uuid())
+  consumerId     String   @map("consumer_id")
+  connectionCode String?  @map("connection_code")
+  tariffPlanId   String?  @map("tariff_plan_id")
+  connectionSize String?  @map("connection_size")
+  serviceType    String?  @map("service_type")
+  installDate    DateTime? @map("install_date")
+  status         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  consumer    Consumer    @relation(fields: [consumerId], references: [id], onDelete: Cascade)
+  tariffPlan  TariffPlan? @relation(fields: [tariffPlanId], references: [id])
+
+  @@map("consumer_connections")
+}
+
+model TariffPlan {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  connectionType String?  @map("connection_type")
+  unitRate       Decimal? @map("unit_rate")
+  fixedCharge    Decimal? @map("fixed_charge")
+  taxRate        Decimal? @map("tax_rate")
+  lateFeeRule    String?  @map("late_fee_rule")
+  effectiveFrom  DateTime? @map("effective_from")
+  effectiveTo    DateTime? @map("effective_to")
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  consumerConnections ConsumerConnection[]
+
+  @@map("tariff_plans")
+}
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+model BillingBatch {
+  id             String             @id @default(uuid())
+  batchName      String             @map("batch_name")
+  billingMonth   String             @map("billing_month")
+  uploadedBy     String             @map("uploaded_by")
+  fileName       String             @map("file_name")
+  filePath       String?            @map("file_path")
+  totalRows      Int                @default(0) @map("total_rows")
+  successfulRows Int                @default(0) @map("successful_rows")
+  failedRows     Int                @default(0) @map("failed_rows")
+  status         BillingBatchStatus @default(processing)
+  uploadedAt     DateTime           @default(now()) @map("uploaded_at")
+  processedAt    DateTime?          @map("processed_at")
+
+  uploadedByUser User               @relation(fields: [uploadedBy], references: [id])
+  bills          Bill[]
+  batchErrors    BillingBatchError[]
+
+  @@map("billing_batches")
+}
+
+model BillingBatchError {
+  id             String   @id @default(uuid())
+  billingBatchId String   @map("billing_batch_id")
+  rowNumber      Int      @map("row_number")
+  consumerNumber String?  @map("consumer_number")
+  errorMessage   String   @map("error_message")
+  rawData        Json?    @map("raw_data")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  billingBatch BillingBatch @relation(fields: [billingBatchId], references: [id], onDelete: Cascade)
+
+  @@map("billing_batch_errors")
+}
+
+model Bill {
+  id               String     @id @default(uuid())
+  consumerId       String     @map("consumer_id")
+  billingBatchId   String?    @map("billing_batch_id")
+  billMonth        String     @map("bill_month")
+  billYear         Int        @map("bill_year")
+  billNumber       String     @unique @map("bill_number")
+  issueDate        DateTime   @map("issue_date")
+  dueDate          DateTime   @map("due_date")
+  previousReading  Decimal?   @map("previous_reading")
+  currentReading   Decimal?   @map("current_reading")
+  unitsConsumed    Decimal?   @map("units_consumed")
+  fixedAmount      Decimal    @default(0) @map("fixed_amount")
+  usageAmount      Decimal    @default(0) @map("usage_amount")
+  taxAmount        Decimal    @default(0) @map("tax_amount")
+  arrearsAmount    Decimal    @default(0) @map("arrears_amount")
+  adjustmentAmount Decimal    @default(0) @map("adjustment_amount")
+  lateFeeAmount    Decimal    @default(0) @map("late_fee_amount")
+  totalAmount      Decimal    @map("total_amount")
+  status           BillStatus @default(unpaid)
+  generatedAt      DateTime   @default(now()) @map("generated_at")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  consumer     Consumer      @relation(fields: [consumerId], references: [id])
+  billingBatch BillingBatch? @relation(fields: [billingBatchId], references: [id])
+  billItems    BillItem[]
+
+  @@map("bills")
+}
+
+model BillItem {
+  id          String   @id @default(uuid())
+  billId      String   @map("bill_id")
+  itemType    String   @map("item_type")
+  description String
+  amount      Decimal
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@map("bill_items")
+}
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  employees Employee[]
+
+  @@map("departments")
+}
+
+model Employee {
+  id                  String         @id @default(uuid())
+  employeeCode        String         @unique @map("employee_code")
+  fullName            String         @map("full_name")
+  photoUrl            String?        @map("photo_url")
+  designation         String?
+  departmentId        String?        @map("department_id")
+  zoneId              String?        @map("zone_id")
+  phone               String?
+  email               String?
+  address             String?
+  joiningDate         DateTime?      @map("joining_date")
+  status              EmployeeStatus @default(active)
+  isPubliclyVerifiable Boolean       @default(true) @map("is_publicly_verifiable")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  department          Department?    @relation(fields: [departmentId], references: [id])
+  zone                Zone?          @relation(fields: [zoneId], references: [id])
+  qrProfile           QrProfile?
+  user                User?
+  assignedComplaints  Complaint[]
+
+  @@map("employees")
+}
+
+model QrProfile {
+  id                 String    @id @default(uuid())
+  employeeId         String    @unique @map("employee_id")
+  publicSlug         String    @unique @map("public_slug")
+  qrImageUrl         String?   @map("qr_image_url")
+  verificationStatus String    @default("active") @map("verification_status")
+  expiresAt          DateTime? @map("expires_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("qr_profiles")
+}
+
+// ─── Complaints ───────────────────────────────────────────────────────────────
+
+model Complaint {
+  id                  String            @id @default(uuid())
+  complaintNumber     String            @unique @map("complaint_number")
+  consumerId          String?           @map("consumer_id")
+  category            String
+  subject             String
+  description         String
+  status              ComplaintStatus   @default(pending)
+  priority            ComplaintPriority @default(medium)
+  assignedEmployeeId  String?           @map("assigned_employee_id")
+  submittedByName     String?           @map("submitted_by_name")
+  submittedByPhone    String?           @map("submitted_by_phone")
+  submittedAt         DateTime          @default(now()) @map("submitted_at")
+  resolvedAt          DateTime?         @map("resolved_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  consumer         Consumer?               @relation(fields: [consumerId], references: [id])
+  assignedEmployee Employee?               @relation(fields: [assignedEmployeeId], references: [id])
+  statusHistory    ComplaintStatusHistory[]
+
+  @@map("complaints")
+}
+
+model ComplaintStatusHistory {
+  id            String          @id @default(uuid())
+  complaintId   String          @map("complaint_id")
+  oldStatus     ComplaintStatus? @map("old_status")
+  newStatus     ComplaintStatus @map("new_status")
+  changedBy     String          @map("changed_by")
+  remarks       String?
+  changedAt     DateTime        @default(now()) @map("changed_at")
+
+  complaint  Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  changedByUser User   @relation(fields: [changedBy], references: [id])
+
+  @@map("complaint_status_history")
+}
+
+// ─── Notices & Audit ──────────────────────────────────────────────────────────
+
+model Notice {
+  id          String   @id @default(uuid())
+  title       String
+  category    String?
+  content     String
+  isPublished Boolean  @default(false) @map("is_published")
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("notices")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id")
+  module      String
+  action      String
+  recordType  String?  @map("record_type")
+  recordId    String?  @map("record_id")
+  description String?
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}

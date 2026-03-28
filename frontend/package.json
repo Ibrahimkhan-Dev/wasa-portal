@@ -1,0 +1,28 @@
+{
+  "name": "wasa-portal-frontend",
+  "version": "1.0.0",
+  "description": "WASA Smart Portal - Next.js Frontend",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3003",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.14",
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.263.1",
+    "next": "14.0.0",
+    "postcss": "^8.4.27",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.1.3"
+  }
+}
