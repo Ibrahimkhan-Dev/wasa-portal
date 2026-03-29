@@ -142,6 +142,16 @@ body {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* ─── Fix browser autofill overriding dark input backgrounds ─── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 60px #071535 inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+}
+
 /* ─── Line-clamp utilities (Tailwind v3 built-in, but kept for safety) ─── */
 .line-clamp-2 {
   display: -webkit-box;
